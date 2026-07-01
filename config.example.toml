@@ -82,6 +82,8 @@ twelvelabs_rerank_terms = false
 #   qwen        (通义千问)
 #   deepseek
 #   gemini
+#   claude      (Anthropic Claude via the official anthropic SDK)
+#   nvidia      (NVIDIA NIM, OpenAI-compatible)
 #   ollama
 #   g4f        (disabled by default; set enable_g4f=true only after accepting its risks)
 #   oneapi
@@ -174,6 +176,22 @@ azure_api_version = "2024-02-15-preview"
 ########## Gemini API Key
 gemini_api_key = ""
 gemini_model_name = "gemini-2.5-flash"
+
+########## Claude (Anthropic) API Key
+# Get your API key at https://console.anthropic.com/settings/keys
+# Uses the official `anthropic` Python SDK (not an OpenAI-compatible endpoint).
+# Default model is claude-opus-4-8. For this short-script use case,
+# claude-sonnet-4-6 is cheaper and claude-haiku-4-5 is cheapest.
+claude_api_key = ""
+claude_model_name = "claude-opus-4-8"
+
+########## NVIDIA NIM API Key
+# NVIDIA NIM exposes an OpenAI-compatible Chat Completions API.
+# Get your API key at https://build.nvidia.com and browse models at
+# https://build.nvidia.com/models
+nvidia_api_key = ""
+nvidia_base_url = "https://integrate.api.nvidia.com/v1"
+nvidia_model_name = "meta/llama-3.3-70b-instruct"
 
 ########## Grok API Key
 grok_api_key = ""

@@ -27,19 +27,18 @@ from app.services import llm, voice
 from app.services import task as tm
 from app.utils import utils
 
-st.set_page_config(
-    page_title="MoneyPrinterTurbo",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="auto",
-    menu_items={
-        "Report a bug": "https://github.com/harry0703/MoneyPrinterTurbo/issues",
-        "About": "# MoneyPrinterTurbo\nSimply provide a topic or keyword for a video, and it will "
-        "automatically generate the video copy, video materials, video subtitles, "
-        "and video background music before synthesizing a high-definition short "
-        "video.\n\nhttps://github.com/harry0703/MoneyPrinterTurbo",
-    },
-)
+# When this script runs as a page inside App.py's st.navigation, set_page_config
+# has already been called by the entry script and calling it again raises. Guard
+# it so the generator still works both as a page and standalone.
+try:
+    st.set_page_config(
+        page_title="Geração de Vídeo - IE (marketing)",
+        page_icon="🎬",
+        layout="wide",
+        initial_sidebar_state="auto",
+    )
+except Exception:
+    pass
 
 
 streamlit_style = """
@@ -151,7 +150,7 @@ locales = utils.load_locales(i18n_dir)
 title_col, lang_col = st.columns([3, 1])
 
 with title_col:
-    st.title(f"MoneyPrinterTurbo v{config.project_version}")
+    st.title("Geração de Vídeo - IE (marketing)")
 
 with lang_col:
     display_languages = []
@@ -179,6 +178,8 @@ support_locales = [
     "zh-TW",
     "de-DE",
     "en-US",
+    "pt-BR",
+    "es",
     "fr-FR",
     "ru-RU",
     "vi-VN",
@@ -360,6 +361,8 @@ if not config.app.get("hide_config", False):
                 ("DeepSeek", "deepseek"),
                 ("ModelScope", "modelscope"),
                 ("Gemini", "gemini"),
+                ("Claude", "claude"),
+                ("NVIDIA", "nvidia"),
                 ("Grok", "grok"),
                 ("Groq", "groq"),
                 ("Ollama", "ollama"),
@@ -566,6 +569,32 @@ if not config.app.get("hide_config", False):
                             - **API Key**: [点击到官网申请](https://ai.google.dev/)
                             - **Base Url**: 留空
                             - **Model Name**: 比如 gemini-1.0-pro
+                            """
+
+            if llm_provider == "claude":
+                if not llm_model_name:
+                    llm_model_name = "claude-opus-4-8"
+
+                with llm_helper:
+                    tips = """
+                            ##### Claude (Anthropic) settings
+                            - **API Key**: get one at https://console.anthropic.com/settings/keys
+                            - **Base Url**: leave empty (the official Anthropic SDK is used)
+                            - **Model Name**: e.g. claude-opus-4-8, claude-sonnet-4-6 (cheaper), or claude-haiku-4-5 (cheapest)
+                            """
+
+            if llm_provider == "nvidia":
+                if not llm_model_name:
+                    llm_model_name = "meta/llama-3.3-70b-instruct"
+                if not llm_base_url:
+                    llm_base_url = "https://integrate.api.nvidia.com/v1"
+
+                with llm_helper:
+                    tips = """
+                            ##### NVIDIA NIM settings
+                            - **API Key**: get one at https://build.nvidia.com (OpenAI-compatible)
+                            - **Base Url**: fixed to https://integrate.api.nvidia.com/v1
+                            - **Model Name**: e.g. meta/llama-3.3-70b-instruct — see https://build.nvidia.com/models
                             """
 
             if llm_provider == "grok":

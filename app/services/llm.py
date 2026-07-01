@@ -136,6 +136,27 @@ def _extract_qwen_generation_text(response) -> str:
     return _normalize_text_response(text, "qwen")
 
 
+def _record_llm_usage(llm_provider, model_name, api_key, response=None, *,
+                      input_tokens=None, output_tokens=None):
+    """Best-effort per-key token accounting. Never raises into generation."""
+    try:
+        from app.services import usage
+
+        if input_tokens is None or output_tokens is None:
+            u = getattr(response, "usage", None)
+            if u is not None:
+                pt = getattr(u, "prompt_tokens", None)
+                ct = getattr(u, "completion_tokens", None)
+                input_tokens = pt if pt is not None else getattr(u, "input_tokens", 0)
+                output_tokens = ct if ct is not None else getattr(u, "output_tokens", 0)
+        usage.record(
+            llm_provider, model_name, api_key or "",
+            input_tokens or 0, output_tokens or 0,
+        )
+    except Exception:
+        pass
+
+
 def _generate_response(prompt: str) -> str:
     try:
         content = ""
@@ -297,6 +318,25 @@ def _generate_response(prompt: str) -> str:
                 base_url = config.app.get("deepseek_base_url")
                 if not base_url:
                     base_url = "https://api.deepseek.com"
+            elif llm_provider == "claude":
+                # Anthropic Claude is handled below by the official `anthropic`
+                # SDK (its own Messages API), not the OpenAI-compatible client.
+                # base_url is therefore unused for this provider.
+                api_key = config.app.get("claude_api_key")
+                model_name = config.app.get("claude_model_name")
+                base_url = ""
+                if not model_name:
+                    model_name = "claude-opus-4-8"
+            elif llm_provider == "nvidia":
+                # NVIDIA NIM exposes an OpenAI-compatible Chat Completions API,
+                # so this provider reuses the generic OpenAI client at the end.
+                api_key = config.app.get("nvidia_api_key")
+                model_name = config.app.get("nvidia_model_name")
+                base_url = config.app.get("nvidia_base_url", "")
+                if not base_url:
+                    base_url = "https://integrate.api.nvidia.com/v1"
+                if not model_name:
+                    model_name = "meta/llama-3.3-70b-instruct"
             elif llm_provider == "modelscope":
                 api_key = config.app.get("modelscope_api_key")
                 model_name = config.app.get("modelscope_model_name")
@@ -366,7 +406,7 @@ def _generate_response(prompt: str) -> str:
                     raise ValueError(
                         f"{llm_provider}: model_name is not set, please set it in the config.toml file."
                     )
-                if not base_url and llm_provider not in ["gemini"]:
+                if not base_url and llm_provider not in ["gemini", "claude"]:
                     raise ValueError(
                         f"{llm_provider}: base_url is not set, please set it in the config.toml file."
                     )
@@ -447,7 +487,42 @@ def _generate_response(prompt: str) -> str:
                         f"[{llm_provider}] returned invalid response content"
                     )
 
+                _record_llm_usage(
+                    llm_provider,
+                    model_name,
+                    api_key,
+                    input_tokens=getattr(
+                        getattr(response, "usage_metadata", None),
+                        "prompt_token_count",
+                        0,
+                    ),
+                    output_tokens=getattr(
+                        getattr(response, "usage_metadata", None),
+                        "candidates_token_count",
+                        0,
+                    ),
+                )
                 return _normalize_text_response(generated_text, llm_provider)
+
+            if llm_provider == "claude":
+                # Anthropic Claude uses its own Messages API via the official
+                # `anthropic` SDK. The script/keyword prompts are short and
+                # already constrained to "return only the raw content", so a
+                # plain non-thinking request is enough here.
+                import anthropic
+
+                client = anthropic.Anthropic(api_key=api_key)
+                message = client.messages.create(
+                    model=model_name,
+                    max_tokens=2048,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = next(
+                    (block.text for block in message.content if block.type == "text"),
+                    None,
+                )
+                _record_llm_usage(llm_provider, model_name, api_key, message)
+                return _normalize_text_response(text, llm_provider)
 
             if llm_provider == "cloudflare":
                 response = requests.post(
@@ -516,6 +591,7 @@ def _generate_response(prompt: str) -> str:
                 if not getattr(response, "choices", None):
                     raise ValueError(f"[{llm_provider}] returned empty response")
 
+                _record_llm_usage(llm_provider, model_name, api_key, response)
                 return _extract_chat_completion_text(response, llm_provider)
 
             if llm_provider == "azure":
@@ -534,6 +610,7 @@ def _generate_response(prompt: str) -> str:
                 )
                 if response:
                     if isinstance(response, ChatCompletion):
+                        _record_llm_usage(llm_provider, model_name, api_key, response)
                         return _extract_chat_completion_text(response, llm_provider)
                     else:
                         raise Exception(
@@ -583,6 +660,7 @@ def _generate_response(prompt: str) -> str:
             )
             if response:
                 if isinstance(response, ChatCompletion):
+                    _record_llm_usage(llm_provider, model_name, api_key, response)
                     return _extract_chat_completion_text(response, llm_provider)
                 else:
                     raise Exception(

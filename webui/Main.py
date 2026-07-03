@@ -1,3 +1,4 @@
+import html as _html
 import os
 import sys
 import webbrowser
@@ -27,19 +28,18 @@ from app.services import llm, voice
 from app.services import task as tm
 from app.utils import utils
 
-st.set_page_config(
-    page_title="MoneyPrinterTurbo",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="auto",
-    menu_items={
-        "Report a bug": "https://github.com/harry0703/MoneyPrinterTurbo/issues",
-        "About": "# MoneyPrinterTurbo\nSimply provide a topic or keyword for a video, and it will "
-        "automatically generate the video copy, video materials, video subtitles, "
-        "and video background music before synthesizing a high-definition short "
-        "video.\n\nhttps://github.com/harry0703/MoneyPrinterTurbo",
-    },
-)
+# When this script runs as a page inside App.py's st.navigation, set_page_config
+# has already been called by the entry script and calling it again raises. Guard
+# it so the generator still works both as a page and standalone.
+try:
+    st.set_page_config(
+        page_title="Geração de Vídeo - IE (marketing)",
+        page_icon="🎬",
+        layout="wide",
+        initial_sidebar_state="auto",
+    )
+except Exception:
+    pass
 
 
 streamlit_style = """
@@ -151,7 +151,7 @@ locales = utils.load_locales(i18n_dir)
 title_col, lang_col = st.columns([3, 1])
 
 with title_col:
-    st.title(f"MoneyPrinterTurbo v{config.project_version}")
+    st.title("Geração de Vídeo - IE (marketing)")
 
 with lang_col:
     display_languages = []
@@ -179,6 +179,8 @@ support_locales = [
     "zh-TW",
     "de-DE",
     "en-US",
+    "pt-BR",
+    "es",
     "fr-FR",
     "ru-RU",
     "vi-VN",
@@ -204,6 +206,208 @@ def get_all_songs():
             if file.endswith(".mp3"):
                 songs.append(file)
     return songs
+
+
+# IE design tokens (mirror of the attached "Etapas" design template)
+_IE = dict(
+    navy="#0f2540", blue="#0060b0", blue2="#3f9be6", yellow="#f8c800",
+    page="#eef2f7", card="#fff", track="#e8edf3", conn="#dde4ec",
+    pend_border="#cdd7e3", pend_text="#8a97a8", pend_label="#8695a6",
+    text_sec="#5b6b80", border="#e5eaf1", green="#1f8a5b", red="#d64545",
+)
+
+# Modern IE "Etapas" wizard styling: tab strip as a stepper, clean form cards,
+# per-step headers, and the live phone-frame preview aside.
+_WIZARD_CSS = """
+<style>
+  .stTabs [data-baseweb="tab-list"]{gap:2px;border-bottom:1px solid #e5eaf1;}
+  .stTabs [data-baseweb="tab"]{font-family:'Source Sans 3',system-ui,sans-serif;
+    font-weight:700;color:#8695a6;font-size:15px;padding:10px 16px;}
+  .stTabs [data-baseweb="tab"][aria-selected="true"]{color:#0f2540;font-weight:800;}
+  .stTabs [data-baseweb="tab-highlight"]{background-color:#0060b0;height:3px;border-radius:3px;}
+  .stTabs [data-baseweb="tab-border"]{background-color:#e8edf3;}
+  .stTabs [data-testid="stVerticalBlockBorderWrapper"]{
+    border:1px solid #e8edf3 !important;border-radius:16px !important;
+    box-shadow:0 1px 3px rgba(15,37,64,.05);}
+  /* per-step header */
+  .dc-stephead{font-family:'Source Sans 3',system-ui,sans-serif;margin:2px 0 14px;}
+  .dc-stephead .k{font-size:12px;font-weight:800;letter-spacing:.08em;color:#0060b0;text-transform:uppercase;}
+  .dc-stephead h3{font-size:25px;font-weight:800;color:#0f2540;margin:4px 0 5px;line-height:1.1;}
+  .dc-stephead p{font-size:14.5px;color:#5b6b80;margin:0;line-height:1.4;}
+  /* preview aside */
+  .dc-prev{font-family:'Source Sans 3',system-ui,sans-serif;}
+  .dc-prev-head{display:flex;align-items:center;margin-bottom:10px;}
+  .dc-prev-k{font-size:12px;font-weight:800;letter-spacing:.08em;color:#8695a6;text-transform:uppercase;}
+  .dc-prev-live{margin-left:auto;font-size:12.5px;font-weight:700;color:#1f8a5b;}
+  .dc-prev-live::before{content:'●';margin-right:5px;animation:dcpulse 1.6s ease-in-out infinite;}
+  .dc-phonewrap{background:#fff;border:1px solid #e6ecf3;border-radius:18px;
+    box-shadow:0 1px 3px rgba(15,37,64,.05);padding:16px;display:flex;justify-content:center;}
+  .dc-phone{position:relative;width:190px;aspect-ratio:9/16;border-radius:22px;overflow:hidden;
+    background:repeating-linear-gradient(135deg,#20304a,#20304a 11px,#26384f 11px,#26384f 22px);
+    box-shadow:0 8px 22px rgba(15,37,64,.22),inset 0 0 0 1px rgba(255,255,255,.06);}
+  .dc-phone-top{position:absolute;top:0;left:0;right:0;padding:12px 12px 24px;
+    background:linear-gradient(to bottom,rgba(9,18,33,.55),transparent);}
+  .dc-pill{display:inline-block;background:rgba(255,255,255,.20);color:#fff;font-size:9px;
+    font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:999px;}
+  .dc-ptitle{margin-top:8px;color:#fff;font-size:12.5px;font-weight:800;line-height:1.2;
+    text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  .dc-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:46px;height:46px;
+    border-radius:50%;background:rgba(255,255,255,.22);border:1.5px solid rgba(255,255,255,.5);
+    display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);}
+  .dc-tri{width:0;height:0;border-left:13px solid #fff;border-top:9px solid transparent;
+    border-bottom:9px solid transparent;margin-left:3px;}
+  .dc-cap{position:absolute;bottom:16px;left:12px;right:12px;text-align:center;color:#fff;
+    font-size:13px;font-weight:800;text-shadow:0 1px 5px rgba(0,0,0,.6);}
+  .dc-specs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+  .dc-spec{background:#fff;border:1px solid #e8edf3;border-radius:12px;padding:10px 12px;}
+  .dc-spec .k{font-size:10.5px;font-weight:800;letter-spacing:.06em;color:#8695a6;text-transform:uppercase;}
+  .dc-spec .v{font-size:15px;font-weight:800;color:#0f2540;margin-top:2px;}
+  @keyframes dcpulse{0%,100%{opacity:.55}50%{opacity:1}}
+</style>
+"""
+
+
+def _step_head(kicker, title, desc):
+    """Per-step header block (ETAPA X DE 5 + title + description)."""
+    return (
+        f'<div class="dc-stephead"><div class="k">{_html.escape(kicker)}</div>'
+        f'<h3>{_html.escape(title)}</h3><p>{_html.escape(desc)}</p></div>'
+    )
+
+
+def _preview_aside(params):
+    """Live phone-frame preview + spec grid reflecting the current form values."""
+    subject = (getattr(params, "video_subject", "") or "").strip()
+    subject_disp = _html.escape(subject) if subject else "Seu tema aparecerá aqui"
+    src = getattr(params, "video_source", "") or ""
+    is_gem = src == "gemini"
+    fonte = "IA · Veo" if is_gem else (src or "—")
+    pill = "GEMINI · VEO 3.1" if is_gem else (src.upper() if src else "PRÉVIA")
+    resol = (getattr(params, "veo_resolution", "") or "720p") if is_gem else "—"
+    aspect_raw = getattr(params, "video_aspect", None)
+    aspect = getattr(aspect_raw, "value", None) or str(aspect_raw or "9:16")
+    voice = getattr(params, "voice_name", "") or ""
+    voz = voice.split(":")[-1].split("-")[0].strip() if voice else "—"
+    trilha = "Lyria 3" if (is_gem and getattr(params, "music_enabled", False)) else "—"
+    legendas = "Sim" if getattr(params, "subtitle_enabled", False) else "Não"
+
+    def spec(k, v):
+        return f'<div class="dc-spec"><div class="k">{_html.escape(k)}</div><div class="v">{_html.escape(str(v))}</div></div>'
+
+    return f"""
+<div class="dc-prev">
+  <div class="dc-prev-head"><span class="dc-prev-k">Pré-visualização</span>
+    <span class="dc-prev-live">ao vivo</span></div>
+  <div class="dc-phonewrap"><div class="dc-phone">
+    <div class="dc-phone-top"><span class="dc-pill">{_html.escape(pill)}</span>
+      <div class="dc-ptitle">{subject_disp}</div></div>
+    <div class="dc-play"><span class="dc-tri"></span></div>
+    <div class="dc-cap">Sua legenda aparece assim</div>
+  </div></div>
+  <div class="dc-specs">
+    {spec("Formato", aspect)}{spec("Fonte", fonte)}
+    {spec("Resolução", resol)}{spec("Voz", voz)}
+    {spec("Trilha", trilha)}{spec("Legendas", legendas)}
+  </div>
+</div>
+"""
+
+
+def render_steps(stages, current_index, progress, detail="", done_flags=None,
+                 state="running", title="Gerando vídeo"):
+    """One self-contained HTML string: yellow top progress + horizontal IE
+    stepper + status card. state in {'running','done','error'}. CSS-only pulse,
+    no JS, scoped under .dc-gen. Re-rendered fully each poll tick."""
+    t = _IE
+    prog = max(0, min(100, int(progress or 0)))
+    n = len(stages)
+    if done_flags is None:
+        done_flags = [i < current_index for i in range(n)]
+
+    items = []
+    for i, name in enumerate(stages):
+        done = bool(done_flags[i])
+        active = (i == current_index) and state == "running"
+        if state == "done":
+            done, active = True, False
+        cls = "done" if done else ("active" if active else "todo")
+        badge = "✓" if done else str(i + 1)
+        conn = "" if i == n - 1 else (
+            f'<div class="dc-conn {"on" if done else "off"}"></div>'
+        )
+        items.append(
+            f'<div class="dc-item">'
+            f'<div class="dc-grp"><span class="dc-badge {cls}">{badge}</span>'
+            f'<span class="dc-lbl {cls}">{_html.escape(name)}</span></div>{conn}</div>'
+        )
+    strip = "".join(items)
+
+    if state == "error":
+        dot, msg, head_cls = '<span class="dc-sdot err"></span>', "Falha na geração do vídeo", "err"
+    elif state == "done":
+        dot, msg, head_cls = '<span class="dc-sdot ok"></span>', "Vídeo gerado com sucesso", "ok"
+    else:
+        dot = '<span class="dc-sdot live"></span>'
+        msg = _html.escape(detail) if detail else "Processando…"
+        head_cls = ""
+    card = (
+        f'<div class="dc-status {head_cls}">'
+        f'<div class="dc-srow">{dot}<span class="dc-stitle">{_html.escape(title)}</span>'
+        f'<span class="dc-spct">{prog}%</span></div>'
+        f'<div class="dc-smsg">{msg}</div></div>'
+    )
+
+    return f"""
+<div class="dc-gen">
+  <style>
+    .dc-gen{{font-family:'Source Sans 3',system-ui,sans-serif;color:{t['navy']};
+      background:{t['card']};border:1px solid {t['border']};border-radius:16px;
+      padding:0 0 18px;overflow:hidden;box-shadow:0 1px 3px rgba(15,37,64,.05)}}
+    .dc-gen *{{box-sizing:border-box}}
+    .dc-track{{height:3px;background:{t['track']};width:100%}}
+    .dc-fill{{height:100%;background:{t['yellow']};width:{max(7, prog)}%;
+      transition:width .35s cubic-bezier(.4,0,.2,1)}}
+    .dc-strip{{display:flex;align-items:center;padding:16px 24px 4px;flex-wrap:nowrap}}
+    .dc-item{{display:flex;align-items:center;min-width:0;flex:1}}
+    .dc-item:last-child{{flex:0 0 auto}}
+    .dc-grp{{display:flex;align-items:center;gap:10px;min-width:0}}
+    .dc-badge{{width:30px;height:30px;flex:0 0 30px;border-radius:50%;display:flex;
+      align-items:center;justify-content:center;font-weight:800;font-size:13px;
+      transition:all .15s}}
+    .dc-badge.todo{{border:1.5px solid {t['pend_border']};background:#fff;color:{t['pend_text']}}}
+    .dc-badge.active{{border:none;background:{t['blue']};color:#fff;
+      box-shadow:0 2px 6px rgba(0,96,176,.35);animation:dcpulse 1.4s ease-in-out infinite}}
+    .dc-badge.done{{border:none;background:{t['navy']};color:#fff}}
+    .dc-lbl{{font-size:13.5px;line-height:1.12;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis}}
+    .dc-lbl.todo{{font-weight:700;color:{t['pend_label']}}}
+    .dc-lbl.active{{font-weight:800;color:{t['navy']}}}
+    .dc-lbl.done{{font-weight:700;color:{t['navy']}}}
+    .dc-conn{{flex:1;height:2px;border-radius:2px;margin:0 12px;min-width:16px;
+      transition:background .2s}}
+    .dc-conn.on{{background:{t['blue']}}}
+    .dc-conn.off{{background:{t['conn']}}}
+    .dc-status{{margin:10px 24px 0;padding:12px 14px;border-radius:12px;
+      background:{t['page']};border:1px solid {t['border']}}}
+    .dc-status.ok{{background:#e7f4ee;border-color:#cde8db}}
+    .dc-status.err{{background:#fbecec;border-color:#f3d0d0}}
+    .dc-srow{{display:flex;align-items:center;gap:9px}}
+    .dc-stitle{{font-weight:800;font-size:13.5px;color:{t['navy']}}}
+    .dc-spct{{margin-left:auto;font-weight:900;font-size:13.5px;color:{t['blue']};
+      letter-spacing:-.3px}}
+    .dc-smsg{{margin-top:5px;font-size:12.5px;color:{t['text_sec']};font-weight:400;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+    .dc-sdot{{width:9px;height:9px;flex:0 0 9px;border-radius:50%}}
+    .dc-sdot.live{{background:{t['blue']};animation:dcpulse 1.6s ease-in-out infinite}}
+    .dc-sdot.ok{{background:{t['green']}}}
+    .dc-sdot.err{{background:{t['red']}}}
+    @keyframes dcpulse{{0%,100%{{opacity:.55}}50%{{opacity:1}}}}
+  </style>
+  <div class="dc-track"><div class="dc-fill"></div></div>
+  <div class="dc-strip">{strip}</div>
+  {card}
+</div>
+"""
 
 
 def open_task_folder(task_id):
@@ -360,6 +564,8 @@ if not config.app.get("hide_config", False):
                 ("DeepSeek", "deepseek"),
                 ("ModelScope", "modelscope"),
                 ("Gemini", "gemini"),
+                ("Claude", "claude"),
+                ("NVIDIA", "nvidia"),
                 ("Grok", "grok"),
                 ("Groq", "groq"),
                 ("Ollama", "ollama"),
@@ -568,6 +774,32 @@ if not config.app.get("hide_config", False):
                             - **Model Name**: 比如 gemini-1.0-pro
                             """
 
+            if llm_provider == "claude":
+                if not llm_model_name:
+                    llm_model_name = "claude-opus-4-8"
+
+                with llm_helper:
+                    tips = """
+                            ##### Claude (Anthropic) settings
+                            - **API Key**: get one at https://console.anthropic.com/settings/keys
+                            - **Base Url**: leave empty (the official Anthropic SDK is used)
+                            - **Model Name**: e.g. claude-opus-4-8, claude-sonnet-4-6 (cheaper), or claude-haiku-4-5 (cheapest)
+                            """
+
+            if llm_provider == "nvidia":
+                if not llm_model_name:
+                    llm_model_name = "meta/llama-3.3-70b-instruct"
+                if not llm_base_url:
+                    llm_base_url = "https://integrate.api.nvidia.com/v1"
+
+                with llm_helper:
+                    tips = """
+                            ##### NVIDIA NIM settings
+                            - **API Key**: get one at https://build.nvidia.com (OpenAI-compatible)
+                            - **Base Url**: fixed to https://integrate.api.nvidia.com/v1
+                            - **Model Name**: e.g. meta/llama-3.3-70b-instruct — see https://build.nvidia.com/models
+                            """
+
             if llm_provider == "grok":
                 if not llm_model_name:
                     llm_model_name = "grok-4.3"
@@ -774,10 +1006,14 @@ if not config.app.get("hide_config", False):
             save_keys_to_config("coverr_api_keys", coverr_api_key)
 
 llm_provider = config.app.get("llm_provider", "").lower()
-panel = st.columns(3)
-left_panel = panel[0]
-middle_panel = panel[1]
-right_panel = panel[2]
+st.html(_WIZARD_CSS)
+_col_form, _col_preview = st.columns([1.9, 1], gap="large")
+with _col_form:
+    tab_roteiro, tab_video, tab_audio, tab_legendas, tab_revisar = st.tabs(
+        ["1 · Roteiro", "2 · Vídeo", "3 · Áudio", "4 · Legendas", "5 · Revisar & Gerar"]
+    )
+left_panel = tab_roteiro
+right_panel = tab_legendas
 
 params = VideoParams(video_subject="")
 params.match_materials_to_script = bool(
@@ -787,6 +1023,8 @@ uploaded_files = []
 uploaded_audio_file = None
 
 with left_panel:
+    st.html(_step_head("Etapa 1 de 5", "Roteiro do vídeo",
+                       "Comece pelo tema. A IA escreve o roteiro e extrai as palavras-chave — você pode editar tudo à mão."))
     with st.container(border=True):
         st.write(tr("Video Script Settings"))
         params.video_subject = st.text_input(
@@ -893,7 +1131,9 @@ with left_panel:
             tr("Video Keywords"), value=st.session_state["video_terms"]
         )
 
-with middle_panel:
+with tab_video:
+    st.html(_step_head("Etapa 2 de 5", "Fonte e visual",
+                       "Escolha o motor de vídeo (IA Veo ou banco), formato e qualidade."))
     with st.container(border=True):
         st.write(tr("Video Settings"))
         video_concat_modes = [
@@ -905,6 +1145,7 @@ with middle_panel:
             (tr("Pixabay"), "pixabay"),
             (tr("Coverr"), "coverr"),
             (tr("Local file"), "local"),
+            (tr("Gemini (Google AI)"), "gemini"),
             (tr("TikTok"), "douyin"),
             (tr("Bilibili"), "bilibili"),
             (tr("Xiaohongshu"), "xiaohongshu"),
@@ -932,6 +1173,73 @@ with middle_panel:
                 type=local_file_types + [file_type.upper() for file_type in local_file_types],
                 accept_multiple_files=True,
             )
+
+        if params.video_source == "gemini":
+            with st.expander("⚙️ Pipeline Google (Gemini) — configuração por etapa", expanded=True):
+                st.caption(
+                    "Vídeo gerado 100% por IA do Google. Se o Veo falhar ou estourar cota, "
+                    "cai automaticamente para o banco de vídeos."
+                )
+                st.markdown("**Vídeo · Veo 3.1**")
+                _veo_models = [
+                    ("Fast (mais barato)", "veo-3.1-fast-generate-preview"),
+                    ("Standard (mais bonito)", "veo-3.1-generate-preview"),
+                    ("Lite", "veo-3.1-lite-generate-preview"),
+                ]
+                _vm_idx = st.selectbox(
+                    "Modelo Veo",
+                    options=range(len(_veo_models)),
+                    format_func=lambda i: _veo_models[i][0],
+                    index=0,
+                    key="veo_model_sel",
+                )
+                params.veo_model = _veo_models[_vm_idx][1]
+                _c1, _c2 = st.columns(2)
+                params.veo_resolution = _c1.selectbox("Resolução", ["720p", "1080p", "4k"], index=0, key="veo_res_sel")
+                params.veo_duration_seconds = _c2.selectbox("Duração/clipe (s)", ["8", "6", "4"], index=0, key="veo_dur_sel")
+                params.veo_enhance_prompt = st.toggle("Enriquecer prompt (enhance)", value=True, key="veo_enh")
+                params.veo_generate_audio = st.toggle(
+                    "Áudio nativo do Veo (não recomendado — colide com a narração)", value=False, key="veo_aud"
+                )
+                params.veo_negative_prompt = st.text_input(
+                    "Negative prompt", value="blurry, low quality, distorted, watermark", key="veo_neg"
+                )
+                _rate = {
+                    ("veo-3.1-fast-generate-preview", "720p"): 0.10,
+                    ("veo-3.1-fast-generate-preview", "1080p"): 0.12,
+                    ("veo-3.1-fast-generate-preview", "4k"): 0.30,
+                    ("veo-3.1-generate-preview", "720p"): 0.40,
+                    ("veo-3.1-generate-preview", "1080p"): 0.40,
+                    ("veo-3.1-generate-preview", "4k"): 0.60,
+                    ("veo-3.1-lite-generate-preview", "720p"): 0.10,
+                    ("veo-3.1-lite-generate-preview", "1080p"): 0.12,
+                    ("veo-3.1-lite-generate-preview", "4k"): 0.30,
+                }.get((params.veo_model, params.veo_resolution), 0.40)
+                _per_clip = _rate * int(params.veo_duration_seconds)
+                st.info(
+                    f"💵 Estimativa Veo: ~${_per_clip:.2f} por clipe de {params.veo_duration_seconds}s. "
+                    f"Um vídeo de ~40s ≈ 5 clipes ≈ ~${_per_clip * 5:.2f} "
+                    "(a duração da narração define o nº de clipes)."
+                )
+
+                st.markdown("**Narração · Gemini TTS**")
+                st.caption("Escolha uma voz **Google Gemini TTS** no seletor de TTS abaixo. Modelo:")
+                _tts_model = st.selectbox(
+                    "Modelo TTS",
+                    ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"],
+                    index=0,
+                    key="gemini_tts_model",
+                )
+                config.app["tts_model"] = _tts_model
+
+                st.markdown("**Música · Lyria 3**")
+                params.music_enabled = st.toggle("Gerar música de fundo com Lyria (~$0.04)", value=True, key="lyria_on")
+                params.music_prompt = st.text_input("Prompt da música (vazio = automático)", value="", key="lyria_prompt")
+
+                st.markdown("**Pesquisa Profunda (opcional)**")
+                params.deep_research_enabled = st.toggle(
+                    "Pesquisar o tema a fundo antes do roteiro (lento e caro)", value=False, key="deep_research_on"
+                )
 
         selected_index = st.selectbox(
             tr("Video Concat Mode"),
@@ -1030,6 +1338,9 @@ with middle_panel:
                 help=tr("Video Encoder Help"),
             )
             config.app["video_codec"] = video_codec_options[selected_codec_index][1]
+with tab_audio:
+    st.html(_step_head("Etapa 3 de 5", "Narração e trilha",
+                       "Defina a voz da narração, os volumes e a música de fundo."))
     with st.container(border=True):
         st.write(tr("Audio Settings"))
 
@@ -1467,6 +1778,8 @@ with middle_panel:
         )
 
 with right_panel:
+    st.html(_step_head("Etapa 4 de 5", "Estilo das legendas",
+                       "Fonte, posição, cores e contorno das legendas."))
     with st.container(border=True):
         st.write(tr("Subtitle Settings"))
         params.subtitle_enabled = st.checkbox(tr("Enable Subtitles"), value=True)
@@ -1682,7 +1995,19 @@ with right_panel:
                     config.save_config()
                     st.success(tr("Coverr API Key deleted successfully"))
 
-start_button = st.button(tr("Generate Video"), use_container_width=True, type="primary")
+with tab_revisar:
+    st.html(_step_head("Etapa 5 de 5", "Conferir e criar",
+                       "Revise o resumo ao lado e gere o vídeo."))
+    st.caption(
+        f"**Tema:** {params.video_subject or '—'}  ·  "
+        f"**Fonte:** `{params.video_source}`  ·  "
+        f"**Legendas:** {'sim' if params.subtitle_enabled else 'não'}"
+    )
+    start_button = st.button(tr("Generate Video"), width="stretch", type="primary")
+
+with _col_preview:
+    st.html(_preview_aside(params))
+
 if start_button:
     config.save_config()
     task_id = str(uuid4())
@@ -1691,7 +2016,7 @@ if start_button:
         scroll_to_bottom()
         st.stop()
 
-    if params.video_source not in ["pexels", "pixabay", "coverr", "local"]:
+    if params.video_source not in ["pexels", "pixabay", "coverr", "local", "gemini"]:
         st.error(tr("Please Select a Valid Video Source"))
         scroll_to_bottom()
         st.stop()
@@ -1708,6 +2033,11 @@ if start_button:
 
     if params.video_source == "coverr" and not config.app.get("coverr_api_keys", ""):
         st.error(tr("Please Enter the Coverr API Key"))
+        scroll_to_bottom()
+        st.stop()
+
+    if params.video_source == "gemini" and not config.app.get("gemini_api_key", ""):
+        st.error("Configure uma Gemini API Key em Configurações para usar o pipeline Google.")
         scroll_to_bottom()
         st.stop()
 
@@ -1755,29 +2085,92 @@ if start_button:
             if m.url:
                 params.video_materials.append(m)
 
-    log_container = st.empty()
+    # Generation runs in a background thread, so the loguru sink must NOT touch
+    # Streamlit (no ScriptRunContext off the main thread) — it only appends; the
+    # poll loop below renders everything on the main thread.
     log_records = []
 
     def log_received(msg):
-        if config.ui["hide_log"]:
+        if config.ui.get("hide_log"):
             return
-        with log_container:
-            log_records.append(msg)
-            st.code("\n".join(log_records))
+        log_records.append(str(msg))
 
-    logger.add(log_received)
+    sink_id = logger.add(log_received)
 
     st.toast(tr("Generating Video"))
     logger.info(tr("Start Generating Video"))
     logger.info(utils.to_json(params))
     scroll_to_bottom()
 
-    result = tm.start(task_id=task_id, params=params)
+    # --- Step-by-step execution animation ---
+    import threading
+    import time as _time
+    from app.services import state as _sm
+
+    gen_thread = threading.Thread(
+        target=tm.start, kwargs={"task_id": task_id, "params": params}, daemon=True
+    )
+    gen_thread.start()
+
+    _has_research = (
+        bool(getattr(params, "deep_research_enabled", False)) and params.video_source == "gemini"
+    )
+    STAGES = (["Pesquisa"] if _has_research else []) + [
+        "Roteiro",
+        "Narração",
+        "Legendas",
+        "Clipes / Materiais",
+        "Música",
+        "Montagem",
+    ]
+
+    def _current_stage(prog):
+        base = 1 if _has_research else 0
+        if _has_research and prog < 8:
+            return 0
+        if prog < 10:
+            return base + 0
+        if prog < 30:
+            return base + 1
+        if prog < 40:
+            return base + 2
+        if prog < 48:
+            return base + 3
+        if prog < 50:
+            return base + 4
+        return base + 5
+
+    prog, cur, detail = 0, 0, ""
+    anim = st.empty()
+    while gen_thread.is_alive():
+        s = _sm.state.get_task(task_id) or {}
+        prog = int(s.get("progress", 0) or 0)
+        cur = _current_stage(prog)
+        detail = s.get("sub_log") or s.get("stage") or ""
+        with anim.container():
+            st.html(render_steps(STAGES, cur, prog, detail, state="running"))
+            if log_records and not config.ui.get("hide_log"):
+                st.code("\n".join(log_records[-15:]))
+        _time.sleep(1)
+
+    gen_thread.join(timeout=2)
+    try:
+        logger.remove(sink_id)
+    except Exception:
+        pass
+
+    result = _sm.state.get_task(task_id) or {}
     if not result or "videos" not in result:
-        st.error(tr("Video Generation Failed"))
+        with anim.container():
+            st.html(render_steps(STAGES, cur, prog, detail, state="error"))
+            if log_records:
+                st.code("\n".join(log_records[-25:]))
         logger.error(tr("Video Generation Failed"))
         scroll_to_bottom()
         st.stop()
+
+    with anim.container():
+        st.html(render_steps(STAGES, len(STAGES), 100, "", state="done"))
 
     video_files = result.get("videos", [])
     st.success(tr("Video Generation Completed"))

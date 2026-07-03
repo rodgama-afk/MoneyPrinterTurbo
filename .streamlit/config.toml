@@ -1,0 +1,12 @@
+# IE (Intercâmbio) brand theme — "Geração de Vídeo - IE (marketing)"
+# Read by Streamlit from the launch directory (project root).
+[theme]
+base = "light"
+primaryColor = "#0060b0"              # IE blue (buttons, active controls, links)
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#eef3f9"  # light blue-grey (sidebar, cards, inputs)
+textColor = "#0f2540"                 # IE navy for text
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false

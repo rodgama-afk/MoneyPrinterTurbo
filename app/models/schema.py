@@ -111,6 +111,26 @@ class VideoParams(BaseModel):
     video_script_prompt: str = Field(default="", max_length=2000)
     custom_system_prompt: str = Field(default="", max_length=8000)
 
+    # --- Google generative pipeline (only used when video_source == "gemini") ---
+    # Stage 1 · Deep Research (optional, off by default: expensive/slow)
+    deep_research_enabled: bool = False
+    research_model: Optional[str] = "deep-research-preview-04-2026"
+    # Stage 2 · Script model override (None = use the configured llm_provider/model)
+    script_model: Optional[str] = None
+    # Stage 3 · Veo video
+    veo_model: Optional[str] = "veo-3.1-fast-generate-preview"
+    veo_resolution: Optional[str] = "720p"          # 720p | 1080p | 4k
+    veo_duration_seconds: Optional[str] = "8"       # "4" | "6" | "8"
+    veo_generate_audio: bool = False                # narration comes from TTS (stage 4)
+    veo_enhance_prompt: bool = True
+    veo_person_generation: Optional[str] = "allow_adult"
+    veo_negative_prompt: Optional[str] = "blurry, low quality, distorted, watermark"
+    veo_seed: Optional[int] = None
+    # Stage 5 · Lyria background music
+    music_enabled: bool = True
+    music_model: Optional[str] = "lyria-3-clip-preview"
+    music_prompt: Optional[str] = ""                # empty -> derived from the subject/script
+
 
 class SubtitleRequest(BaseModel):
     video_script: str

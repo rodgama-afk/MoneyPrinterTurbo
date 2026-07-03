@@ -233,7 +233,87 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     return subtitle_path
 
 
-def get_video_materials(task_id, params, video_terms, audio_duration):
+def _veo_prompts(subject, video_script, n):
+    """Split the narration into ``n`` visual beats, each a Veo prompt."""
+    import re
+
+    sentences = [
+        s.strip()
+        for s in re.split(r"(?<=[.!?。！？])\s+", (video_script or "").strip())
+        if s.strip()
+    ]
+    if not sentences:
+        sentences = [subject or "marketing video"]
+    per = max(1, -(-len(sentences) // n))  # ceil
+    segments = [" ".join(sentences[i:i + per]) for i in range(0, len(sentences), per)][:n]
+    while len(segments) < n:
+        segments.append(subject or (segments[-1] if segments else "marketing video"))
+    return [
+        f"Cinematic, high-quality b-roll for a marketing short about {subject}. "
+        f"Visualize this beat: {seg}"
+        for seg in segments
+    ]
+
+
+def _generate_veo_materials(task_id, params, video_script, audio_duration):
+    """Generate Veo clips covering the narration. Returns local mp4 paths or []
+    (on any failure the caller falls back to stock footage)."""
+    from app.config import config
+    from app.services.gemini import video as gemini_video
+
+    try:
+        dur = int(str(params.veo_duration_seconds or "8"))
+    except (TypeError, ValueError):
+        dur = 8
+    n = max(1, -(-int(audio_duration) // dur))  # ceil(audio_duration / dur)
+    try:
+        max_clips = int(config.app.get("max_veo_clips", 12))
+    except (TypeError, ValueError):
+        max_clips = 12
+    if n > max_clips:
+        logger.warning(f"Veo: {n} clips needed but capping at max_veo_clips={max_clips}")
+        n = max_clips
+
+    aspect = "9:16"
+    try:
+        from app.models.schema import VideoAspect
+
+        w, h = VideoAspect(params.video_aspect).to_resolution()
+        aspect = "9:16" if h >= w else "16:9"
+    except Exception:
+        pass
+
+    prompts = _veo_prompts(params.video_subject, video_script, n)
+    logger.info(
+        f"\n\n## generating {len(prompts)} Veo clip(s) "
+        f"[{aspect}, {params.veo_resolution}, {params.veo_model}]"
+    )
+
+    def _tick(_op):
+        sm.state.update_task(
+            task_id,
+            progress=45,
+            stage="Clipes Veo",
+            sub_log=f"Renderizando {len(prompts)} clipe(s) com Veo…",
+        )
+
+    return gemini_video.generate_clips(
+        prompts,
+        task_id=task_id,
+        model=params.veo_model or "veo-3.1-fast-generate-preview",
+        aspect_ratio=aspect,
+        resolution=params.veo_resolution or "720p",
+        duration_seconds=str(params.veo_duration_seconds or "8"),
+        negative_prompt=params.veo_negative_prompt or "blurry, low quality, distorted, watermark",
+        generate_audio=bool(params.veo_generate_audio),
+        enhance_prompt=bool(params.veo_enhance_prompt),
+        person_generation=params.veo_person_generation or "allow_adult",
+        seed=params.veo_seed,
+        on_tick=_tick,
+    )
+
+
+def get_video_materials(task_id, params, video_terms, audio_duration, video_script=""):
     if params.video_source == "local":
         logger.info("\n\n## preprocess local materials")
         materials = video.preprocess_video(
@@ -246,6 +326,20 @@ def get_video_materials(task_id, params, video_terms, audio_duration):
             )
             return None
         return [material_info.url for material_info in materials]
+    elif params.video_source == "gemini":
+        clips = _generate_veo_materials(task_id, params, video_script, audio_duration)
+        if clips:
+            return clips
+        # Veo unavailable / failed -> fall back to stock footage (chosen behavior).
+        from app.config import config as _config
+
+        logger.warning("Veo produced no clips; falling back to stock footage.")
+        params.video_source = _config.app.get("veo_fallback_source", "pexels")
+        if not video_terms:
+            video_terms = generate_terms(task_id, params, video_script)
+        return get_video_materials(
+            task_id, params, video_terms, audio_duration, video_script
+        )
     else:
         logger.info(f"\n\n## downloading videos from {params.video_source}")
         # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
@@ -333,6 +427,33 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     logger.info(f"start task: {task_id}, stop_at: {stop_at}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
 
+    # Remember the requested engine — get_video_materials may switch
+    # params.video_source to a stock fallback if Veo is unavailable.
+    original_source = params.video_source
+
+    # 0. (optional) Deep Research to enrich the script — off by default.
+    if getattr(params, "deep_research_enabled", False) and original_source == "gemini":
+        sm.state.update_task(
+            task_id, state=const.TASK_STATE_PROCESSING, progress=7, stage="Pesquisa"
+        )
+        try:
+            from app.services.gemini import research as gemini_research
+
+            report = gemini_research.deep_research(
+                params.video_subject,
+                model=(params.research_model or "deep-research-preview-04-2026"),
+            )
+        except Exception as e:
+            logger.error(f"deep research failed: {e}")
+            report = None
+        if report:
+            snippet = report[:1500]
+            params.video_script_prompt = (
+                f"Background research context:\n{snippet}\n\n"
+                + (params.video_script_prompt or "")
+            )
+            logger.success("deep research added as script context")
+
     # 1. Generate script
     video_script = generate_script(task_id, params)
     if not video_script or "Error: " in video_script:
@@ -349,7 +470,9 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     # 2. Generate terms
     video_terms = ""
-    if params.video_source != "local":
+    # Veo (source == "gemini") builds prompts from the script itself, so it does
+    # not need stock search terms.
+    if params.video_source not in ("local", "gemini"):
         video_terms = generate_terms(task_id, params, video_script)
         if not video_terms:
             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
@@ -402,7 +525,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     # 5. Get video materials
     downloaded_videos = get_video_materials(
-        task_id, params, video_terms, audio_duration
+        task_id, params, video_terms, audio_duration, video_script
     )
     if not downloaded_videos:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
@@ -423,6 +546,27 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     # 这样可以避免 /subtitle 和 /audio 这类请求访问不存在的字段。
     if type(params.video_concat_mode) is str:
         params.video_concat_mode = VideoConcatMode(params.video_concat_mode)
+
+    # 5b. Background music via Lyria (Google pipeline only)
+    if original_source == "gemini" and getattr(params, "music_enabled", False):
+        sm.state.update_task(
+            task_id, state=const.TASK_STATE_PROCESSING, progress=48, stage="Música"
+        )
+        from app.services.gemini import music as gemini_music
+
+        music_prompt = params.music_prompt or (
+            f"Upbeat, modern instrumental background music for a marketing video "
+            f"about {params.video_subject}. Energetic, professional, no vocals."
+        )
+        bgm = gemini_music.generate_music(
+            music_prompt, task_id=task_id, model=params.music_model or "lyria-3-clip-preview"
+        )
+        if bgm:
+            params.bgm_type = "custom"
+            params.bgm_file = path.basename(bgm)
+            logger.info(f"Lyria background music: {bgm}")
+        else:
+            logger.warning("Lyria music unavailable; keeping the configured background music.")
 
     # 6. Generate final videos
     final_video_paths, combined_video_paths = generate_final_videos(

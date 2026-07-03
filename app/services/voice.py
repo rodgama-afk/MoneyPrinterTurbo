@@ -1046,8 +1046,9 @@ def gemini_tts(
         
         logger.info(f"start, voice name: {voice_name}, try: 1")
         
-        # 使用Gemini TTS API
-        model = genai.GenerativeModel("gemini-2.5-flash-preview-tts")
+        # 使用Gemini TTS API (model configurable; default keeps the free-tier 2.5)
+        tts_model = config.app.get("tts_model", "gemini-2.5-flash-preview-tts")
+        model = genai.GenerativeModel(tts_model)
         
         generation_config = {
             "response_modalities": ["AUDIO"],

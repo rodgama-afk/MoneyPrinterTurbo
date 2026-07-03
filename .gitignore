@@ -27,6 +27,9 @@ node_modules
 venv/
 .venv
 
+# Generated media (Lyria background tracks written at runtime)
+/resource/songs/lyria-*.mp3
+
 # Debug and test files
 CLAUDE.md
 debug/
